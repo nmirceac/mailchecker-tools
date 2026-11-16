@@ -1,0 +1,24 @@
+<?php
+
+namespace App\Models;
+
+use MailcheckerTools\Models\EmailCheck as BaseEmailCheck;
+
+/**
+ * Email checks made through the Mail Checker (nmirceac/mailchecker-tools).
+ *
+ * Optional hook, run on the queue when a check gets its final result:
+ *
+ *     public function afterCheckCompleted(): void
+ *     {
+ *         if ($this->isInvalid()) {
+ *             // e.g. flag the lead, notify someone…
+ *         }
+ *     }
+ *
+ * Or listen for MailcheckerTools\Events\EmailCheckCompleted.
+ */
+class EmailCheck extends BaseEmailCheck
+{
+    //
+}

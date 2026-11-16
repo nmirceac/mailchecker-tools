@@ -1,0 +1,66 @@
+{
+    "name": "nmirceac/mailchecker-tools",
+    "type": "library",
+    "description": "Laravel client for the WeAnswer Mail Checker (API v2): check email addresses (sync, async, batch), receive signed results by webhook, validate form input.",
+    "keywords": ["email", "verification", "smtp", "laravel", "mailchecker", "weanswer", "webhooks"],
+    "homepage": "https://github.com/nmirceac/mailchecker-tools",
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "Mircea Nicolae",
+            "email": "mircea@nicolae.co.za",
+            "homepage": "https://github.com/nmirceac",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.1",
+        "guzzlehttp/guzzle": "^7.5|^8.0",
+        "illuminate/cache": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/console": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/database": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/events": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/http": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/log": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/queue": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/routing": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/support": "^10.0|^11.0|^12.0|^13.0",
+        "illuminate/validation": "^10.0|^11.0|^12.0|^13.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^2.9|^3.0",
+        "laravel/pint": "^1.13",
+        "orchestra/testbench": "^8.0|^9.0|^10.0|^11.0",
+        "phpunit/phpunit": "^10.5|^11.0|^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "MailcheckerTools\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "MailcheckerTools\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "MailcheckerTools\\MailcheckerToolsServiceProvider"
+            ],
+            "aliases": {
+                "Mailcheck": "MailcheckerTools\\Facades\\Mailcheck"
+            }
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "lint": "pint --test",
+        "analyse": "phpstan analyse"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

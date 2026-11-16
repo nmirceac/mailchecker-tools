@@ -1,0 +1,36 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::connection(config('mailchecker.checks.connection'))->create(config('mailchecker.checks.table', 'mailchecker_checks'), function (Blueprint $table) {
+            $table->id();
+            $table->string('check_id', 26)->nullable()->unique(); // the platform's id
+            $table->uuid('reference')->unique();                  // our idempotency key
+            $table->string('email', 254)->index();
+            $table->string('mode', 8)->nullable();                // sync, async, batch
+            $table->string('state', 16)->default('pending')->index();
+            $table->string('result', 8)->nullable()->index();     // valid, invalid, unknown
+            $table->string('reason', 32)->nullable();
+            $table->boolean('final')->default(false);
+            $table->boolean('cached')->default(false);
+            $table->string('mx_host')->nullable();
+            $table->unsignedSmallInteger('smtp_code')->nullable();
+            $table->text('details')->nullable();                  // the platform's last answer (JSON)
+            $table->timestamp('requested_at')->nullable();
+            $table->timestamp('checked_at')->nullable();
+            $table->timestamp('completed_at')->nullable();
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::connection(config('mailchecker.checks.connection'))->dropIfExists(config('mailchecker.checks.table', 'mailchecker_checks'));
+    }
+};
