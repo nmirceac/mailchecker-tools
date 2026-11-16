@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.2 (2026-11-17), pre-release
+
+- Laravel 10: model casts declared as a property (`casts()` only exists from Laravel 11), so `details` is stored as JSON.
+
 ## 0.0.1 (2026-11-17), pre-release
 
 - Client for the Mail Checker API v2: sync, async and batch checks (references make retries safe), check lookups, webhook settings.

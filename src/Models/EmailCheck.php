@@ -42,18 +42,16 @@ class EmailCheck extends Model
 
     protected $attributes = ['state' => 'pending', 'final' => false, 'cached' => false];
 
-    protected function casts(): array
-    {
-        return [
-            'final' => 'boolean',
-            'cached' => 'boolean',
-            'smtp_code' => 'integer',
-            'details' => 'array',
-            'requested_at' => 'datetime',
-            'checked_at' => 'datetime',
-            'completed_at' => 'datetime',
-        ];
-    }
+    /** A property, not casts(): the method only exists from Laravel 11. */
+    protected $casts = [
+        'final' => 'boolean',
+        'cached' => 'boolean',
+        'smtp_code' => 'integer',
+        'details' => 'array',
+        'requested_at' => 'datetime',
+        'checked_at' => 'datetime',
+        'completed_at' => 'datetime',
+    ];
 
     public function getTable(): string
     {
