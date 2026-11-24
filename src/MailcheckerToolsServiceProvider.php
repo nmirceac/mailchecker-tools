@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use MailcheckerTools\Client\MailcheckClient;
 use MailcheckerTools\Commands\CheckCommand;
+use MailcheckerTools\Commands\ForexCommand;
 use MailcheckerTools\Commands\GeoipCommand;
 use MailcheckerTools\Commands\SetupCommand;
 use MailcheckerTools\Commands\SyncCommand;
@@ -25,6 +26,8 @@ class MailcheckerToolsServiceProvider extends ServiceProvider
             (int) config('mailchecker.api.retries', 2),
             (int) config('mailchecker.geoip.timeout', 10),
             (int) config('mailchecker.geoip.cache_minutes', 1440),
+            (int) config('mailchecker.forex.timeout', 10),
+            (int) config('mailchecker.forex.cache_minutes', 60),
         ));
     }
 
@@ -37,7 +40,7 @@ class MailcheckerToolsServiceProvider extends ServiceProvider
         }
 
         if ($this->app->runningInConsole()) {
-            $this->commands([SetupCommand::class, CheckCommand::class, SyncCommand::class, GeoipCommand::class]);
+            $this->commands([SetupCommand::class, CheckCommand::class, SyncCommand::class, GeoipCommand::class, ForexCommand::class]);
 
             $this->publishes([__DIR__.'/../config/mailchecker.php' => config_path('mailchecker.php')], 'mailchecker-tools-config');
             $this->publishes([__DIR__.'/../stubs/EmailCheck.stub' => app_path('Models/EmailCheck.php')], 'mailchecker-tools-models');

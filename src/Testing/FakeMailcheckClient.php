@@ -3,6 +3,7 @@
 namespace MailcheckerTools\Testing;
 
 use Closure;
+use DateTimeInterface;
 use Illuminate\Support\Str;
 use MailcheckerTools\Client\MailcheckApiException;
 use MailcheckerTools\Client\MailcheckClient;
@@ -29,6 +30,15 @@ class FakeMailcheckClient extends MailcheckClient
 
     /** @var list<string> addresses looked up, in order */
     public array $geoipLookups = [];
+
+    /** @var array<string, float|Throwable> exchange rates by "FROM/TO" ('*' for the rest) */
+    public array $exchangeRates = [];
+
+    /** @var list<string> exchange rates asked for, as "FROM/TO", in order */
+    public array $exchangeRateRequests = [];
+
+    /** How many of each currency one EUR buys by default (the platform's FOREX_DRIVER=fake rates). */
+    public const EUR_RATES = ['EUR' => 1.0, 'GBP' => 0.8, 'RON' => 5.0, 'USD' => 1.25, 'ZAR' => 20.0];
 
     /** @param  array<string, string>  $results */
     public function __construct(public array $results = [])
@@ -159,6 +169,66 @@ class FakeMailcheckClient extends MailcheckClient
     public function assertNoGeoipLookups(): void
     {
         Assert::assertSame([], $this->geoipLookups, 'IP addresses were looked up unexpectedly.');
+    }
+
+    /**
+     * Canned exchange rates by "FROM/TO" (the other direction is worked out), '*' for the rest,
+     * or an exception to throw. Without one, the rates follow EUR_RATES (USD/ZAR 16).
+     *
+     *     Mailcheck::fake()->withExchangeRates(['USD/ZAR' => 18.2, 'EUR/RON' => new MailcheckApiException('…', 503)]);
+     *
+     * @param  array<string, float|int|Throwable>  $rates
+     */
+    public function withExchangeRates(array $rates): static
+    {
+        foreach ($rates as $pair => $rate) {
+            $this->exchangeRates[strtoupper(str_replace(' ', '', (string) $pair))] = $rate instanceof Throwable ? $rate : (float) $rate;
+        }
+
+        return $this;
+    }
+
+    public function exchangeRate(string $from, string $to, DateTimeInterface|string|null $date = null): array
+    {
+        $from = strtoupper(trim($from));
+        $to = strtoupper(trim($to));
+        $date = $date instanceof DateTimeInterface ? $date->format('Y-m-d') : (blank($date) ? now()->utc()->toDateString() : trim($date));
+        $this->exchangeRateRequests[] = "{$from}/{$to}";
+
+        $inverse = $this->exchangeRates["{$to}/{$from}"] ?? null;
+        $rate = match (true) {
+            $from === $to => 1.0,
+            isset($this->exchangeRates["{$from}/{$to}"]) => $this->exchangeRates["{$from}/{$to}"],
+            is_float($inverse) => 1 / $inverse,
+            isset($this->exchangeRates['*']) => $this->exchangeRates['*'],
+            isset(self::EUR_RATES[$from], self::EUR_RATES[$to]) => self::EUR_RATES[$to] / self::EUR_RATES[$from],
+            default => new MailcheckApiException("Unsupported currency {$from}/{$to}.", 422, ['from' => ['Unsupported currency.']]),
+        };
+        if ($rate instanceof Throwable) {
+            throw $rate;
+        }
+
+        return [
+            'from' => $from, 'to' => $to, 'date' => $date, 'rate' => $rate,
+            'cached' => false, 'stale' => false, 'fetched_at' => $from === $to ? null : now()->utc()->toIso8601ZuluString(),
+        ];
+    }
+
+    /** Assert a rate was asked for ($times times), e.g. 'USD/ZAR', or that a request matches the callback. */
+    public function assertExchangeRateRequested(string|Closure|null $pair = null, int $times = 1): void
+    {
+        $matches = array_filter($this->exchangeRateRequests, fn (string $asked) => match (true) {
+            $pair === null => true,
+            $pair instanceof Closure => (bool) $pair($asked),
+            default => $asked === strtoupper(str_replace(' ', '', $pair)),
+        });
+
+        Assert::assertCount($times, $matches, 'Unexpected number of exchange rate requests'.(is_string($pair) ? " for {$pair}" : '').'.');
+    }
+
+    public function assertNoExchangeRateRequests(): void
+    {
+        Assert::assertSame([], $this->exchangeRateRequests, 'Exchange rates were asked for unexpectedly.');
     }
 
     /** Assert an address was checked ($times times), or that a check matches the callback. */

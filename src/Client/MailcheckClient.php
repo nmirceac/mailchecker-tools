@@ -2,6 +2,7 @@
 
 namespace MailcheckerTools\Client;
 
+use DateTimeInterface;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
@@ -23,6 +24,9 @@ use Throwable;
  *   ip, isp, org, hostname, latitude, longitude, postal_code, city, country_code, country_name,
  *   continent_code, continent_name, region, district, timezone_name, connection_type, asn_number,
  *   asn_org, asn, currency_code, currency_name, language_code, language_name, success, premium
+ *
+ * Exchange rates (exchangeRate()): from, to, date (the UTC day of the rate), rate (how many `to`
+ * one `from` buys), cached, stale, fetched_at.
  */
 class MailcheckClient
 {
@@ -36,6 +40,8 @@ class MailcheckClient
         protected int $retries = 2,
         protected int $geoipTimeout = 10,
         protected int $geoipCacheMinutes = 0,
+        protected int $forexTimeout = 10,
+        protected int $forexCacheMinutes = 0,
     ) {}
 
     /**
@@ -169,6 +175,64 @@ class MailcheckClient
         }
 
         return $result;
+    }
+
+    /**
+     * How many $to one $from buys (token ability forex:read). Currencies: EUR, GBP, RON, USD, ZAR.
+     * The platform fetches the rates from Fixer once a day (shortly after 00:00 UTC) and keeps
+     * them; `date` is the UTC day of the rate. `stale` is true when today's rates weren't
+     * available and an earlier day's were returned. Answers that aren't stale are also kept in
+     * your default cache for mailchecker.forex.cache_minutes.
+     *
+     * @param  DateTimeInterface|string|null  $date  the day (Y-m-d); null for today
+     * @return array{from: string, to: string, date: string, rate: float, cached: bool, stale: bool, fetched_at: string|null}
+     *
+     * @throws MailcheckApiException 422 for an unsupported currency or a bad date, 503 while Fixer is unavailable
+     */
+    public function exchangeRate(string $from, string $to, DateTimeInterface|string|null $date = null): array
+    {
+        $from = strtoupper(trim($from));
+        $to = strtoupper(trim($to));
+        $date = $date instanceof DateTimeInterface ? $date->format('Y-m-d') : (blank($date) ? null : trim($date));
+
+        $key = "mailchecker-tools:forex:{$from}:{$to}:".($date ?? 'today');
+        if ($this->forexCacheMinutes > 0 && is_array($cached = Cache::get($key))) {
+            /** @var array{from: string, to: string, date: string, rate: float, cached: bool, stale: bool, fetched_at: string|null} $cached */
+            return $cached;
+        }
+
+        $path = 'forex/'.rawurlencode($from).'/'.rawurlencode($to);
+        $response = $this->request('get', $path, $date === null ? [] : ['date' => $date], timeout: $this->forexTimeout);
+        $fetchedAt = $response->json('meta.fetched_at');
+
+        $result = [
+            'from' => (string) $response->json('data.from', $from),
+            'to' => (string) $response->json('data.to', $to),
+            'date' => (string) $response->json('data.date', $date ?? ''),
+            'rate' => (float) $response->json('data.rate'),
+            'cached' => (bool) $response->json('meta.cached', false),
+            'stale' => (bool) $response->json('meta.stale', false),
+            'fetched_at' => is_string($fetchedAt) ? $fetchedAt : null,
+        ];
+
+        if ($this->forexCacheMinutes > 0 && ! $result['stale'] && $result['rate'] > 0) {
+            Cache::put($key, $result, now()->addMinutes($this->forexCacheMinutes));
+        }
+
+        return $result;
+    }
+
+    /**
+     * $amount in $from, converted to $to at that day's rate (not rounded: round to your currency's
+     * minor unit yourself).
+     *
+     * @param  DateTimeInterface|string|null  $date  the day (Y-m-d); null for today
+     *
+     * @throws MailcheckApiException see exchangeRate()
+     */
+    public function convert(float|int $amount, string $from, string $to, DateTimeInterface|string|null $date = null): float
+    {
+        return $amount * $this->exchangeRate($from, $to, $date)['rate'];
     }
 
     /**

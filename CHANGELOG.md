@@ -1,10 +1,13 @@
 # Changelog
 
-## 0.0.3 (unreleased), pre-release
+## 0.0.3 (2026-11-24), pre-release
 
 - `Mailcheck::geoip($ip)`: location, ISP and ASN of an IPv4 or IPv6 address (`GET /api/v2/geoip/{ip}`, token ability `geoip:lookup`), with its own timeout (`MAILCHECKER_GEOIP_TIMEOUT`, 10 s) and a local cache for answers with a location (`MAILCHECKER_GEOIP_CACHE_MINUTES`, 1 day).
 - `mailchecker:geoip {ip}` command.
 - `Mailcheck::fake()->withGeoip([...])`, `assertGeoipLookedUp()`, `assertNoGeoipLookups()`.
+- `Mailcheck::exchangeRate($from, $to, $date = null)` and `Mailcheck::convert($amount, $from, $to, $date = null)`: daily exchange rates for EUR, GBP, RON, USD and ZAR (`GET /api/v2/forex/{from}/{to}?date=`, token ability `forex:read`), with their own timeout (`MAILCHECKER_FOREX_TIMEOUT`, 10 s) and a local cache (`MAILCHECKER_FOREX_CACHE_MINUTES`, 1 hour).
+- `mailchecker:forex {from} {to} {amount=1} {--date=}` command.
+- `Mailcheck::fake()->withExchangeRates([...])`, `assertExchangeRateRequested()`, `assertNoExchangeRateRequests()`.
 
 ## 0.0.2 (2026-11-17), pre-release
 

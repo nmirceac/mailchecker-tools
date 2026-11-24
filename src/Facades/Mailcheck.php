@@ -15,6 +15,8 @@ use MailcheckerTools\Testing\FakeMailcheckClient;
  * @method static array{url: string|null, secret: string, events: list<string>} updateWebhook(?string $url, bool $rotateSecret = false)
  * @method static array{ok: bool, status: int|null, error: string|null} testWebhook()
  * @method static array{data: array<string, mixed>, cached: bool, stale: bool, fetched_at: string|null} geoip(string $ip)
+ * @method static array{from: string, to: string, date: string, rate: float, cached: bool, stale: bool, fetched_at: string|null} exchangeRate(string $from, string $to, \DateTimeInterface|string|null $date = null)
+ * @method static float convert(float|int $amount, string $from, string $to, \DateTimeInterface|string|null $date = null)
  *
  * @see MailcheckClient
  */
@@ -25,6 +27,7 @@ class Mailcheck extends Facade
      *
      *     Mailcheck::fake(['bad@example.com' => 'invalid', '*' => 'valid']);
      *     Mailcheck::fake()->withGeoip(['81.196.40.181' => ['city' => 'Deva', 'country_code' => 'RO']]);
+     *     Mailcheck::fake()->withExchangeRates(['USD/ZAR' => 18.2]);
      *
      * @param  array<string, string>  $results
      */

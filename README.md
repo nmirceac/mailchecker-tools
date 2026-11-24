@@ -2,14 +2,16 @@
 
 Laravel client for the **WeAnswer Mail Checker** (API v2): check whether email addresses exist,
 synchronously, asynchronously or in batches, receive the results as signed webhooks, keep them in
-your own table, and validate form input. Also look up the location of IP addresses.
+your own table, and validate form input. Also look up the location of IP addresses and get currency
+exchange rates.
 
 * `Mailcheck::check()`: one typed client for the API (retries are safe: every check carries a reference)
 * `EmailCheck` model + `mailchecker_checks` table, kept up to date by webhooks
 * webhook receiver with signature verification, de-duplication, a hook and a Laravel event
 * `new DeliverableEmail` validation rule, with a local cache
 * `Mailcheck::geoip()`: country, city, ISP and ASN of an IPv4 or IPv6 address
-* `mailchecker:setup`, `mailchecker:check`, `mailchecker:sync` and `mailchecker:geoip` commands
+* `Mailcheck::exchangeRate()` and `Mailcheck::convert()`: daily exchange rates (EUR, GBP, RON, USD, ZAR)
+* `mailchecker:setup`, `mailchecker:check`, `mailchecker:sync`, `mailchecker:geoip` and `mailchecker:forex` commands
 * `Mailcheck::fake()` for your tests
 
 PHP 8.1+, Laravel 10, 11, 12 and 13.
@@ -24,7 +26,8 @@ php artisan migrate
 ```
 
 Ask for an application and a token in the Mail Checker portal (**Applications → API**), with the
-abilities `checks:run`, `checks:read` and `webhook:manage` (and `geoip:lookup` for GeoIP), then:
+abilities `checks:run`, `checks:read` and `webhook:manage` (and `geoip:lookup` for GeoIP, `forex:read` for
+exchange rates), then:
 
 ```dotenv
 MAILCHECKER_API_URL=https://<mail checker host>/api/v2
@@ -113,6 +116,33 @@ $geo['fetched_at'];             // when it was looked up (null for private addre
 * Lookups count towards the application's per-minute limit. Timeout: `MAILCHECKER_GEOIP_TIMEOUT` (10 s).
 * From the command line: `php artisan mailchecker:geoip 81.196.40.181`.
 
+## Exchange rates
+
+```php
+use MailcheckerTools\Facades\Mailcheck;
+
+$rate = Mailcheck::exchangeRate('ZAR', 'USD');                // today
+$rate = Mailcheck::exchangeRate('ZAR', 'USD', '2025-06-30');  // or a past day (string or DateTimeInterface)
+
+$rate['rate'];         // 0.0547…: how many USD one ZAR buys
+$rate['date'];         // "2026-11-24": the UTC day of the rate
+$rate['stale'];        // today's rates weren't available: an earlier day's (see date)
+$rate['fetched_at'];   // when the Mail Checker got it from Fixer (null for the same currency)
+
+$usd = Mailcheck::convert(1500, 'ZAR', 'USD');                // 1500 × the rate, not rounded
+```
+
+* Currencies: EUR, GBP, RON, USD, ZAR (any direction; the same currency is 1). The Mail Checker fetches
+  every pair from Fixer once a day, shortly after 00:00 UTC, and keeps them; a past day it doesn't have yet
+  is fetched on the first request.
+* Answers that aren't stale are also kept in your default cache for an hour (`MAILCHECKER_FOREX_CACHE_MINUTES`,
+  0 = off), so a "today" answer can be the previous day's for up to that long after midnight UTC.
+* An unsupported currency or a bad date (future, before 1999, not `Y-m-d`) throws a `MailcheckApiException`
+  with status 422. While Fixer is unavailable and nothing is stored it throws with status 503 (`isRetryable()`
+  is true).
+* Requests count towards the application's per-minute limit. Timeout: `MAILCHECKER_FOREX_TIMEOUT` (10 s).
+* From the command line: `php artisan mailchecker:forex ZAR USD 1500 [--date=2025-06-30]`.
+
 ## Hooks and events
 
 When a check gets its final result (by webhook, `checkNow()` or `mailchecker:sync`):
@@ -196,6 +226,19 @@ $fake = Mailcheck::fake()->withGeoip([
 
 $fake->assertGeoipLookedUp('81.196.40.181');
 $fake->assertNoGeoipLookups();
+```
+
+Exchange rates default to round numbers (one EUR buys 0.8 GBP, 5 RON, 1.25 USD, 20 ZAR, so USD/ZAR is 16);
+set a pair (the other direction is worked out), or throw:
+
+```php
+$fake = Mailcheck::fake()->withExchangeRates([
+    'USD/ZAR' => 18.2,
+    'EUR/RON' => new \MailcheckerTools\Client\MailcheckApiException('Exchange rates are temporarily unavailable.', 503),
+]);
+
+$fake->assertExchangeRateRequested('USD/ZAR');
+$fake->assertNoExchangeRateRequests();
 ```
 
 ## Development

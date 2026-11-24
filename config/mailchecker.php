@@ -4,7 +4,7 @@ return [
     /*
      * The Mail Checker API. The token is an application token from the portal
      * (Applications → API), with the abilities checks:run, checks:read and webhook:manage
-     * (and geoip:lookup for Mailcheck::geoip()).
+     * (and geoip:lookup for Mailcheck::geoip(), forex:read for Mailcheck::exchangeRate()).
      */
     'api' => [
         'url' => env('MAILCHECKER_API_URL'),
@@ -74,5 +74,17 @@ return [
         'timeout' => (int) env('MAILCHECKER_GEOIP_TIMEOUT', 10),
         // Also keep answers with a location in your default cache store (0 = off).
         'cache_minutes' => (int) env('MAILCHECKER_GEOIP_CACHE_MINUTES', 1440),
+    ],
+
+    /*
+     * Mailcheck::exchangeRate() and convert(): currency exchange rates (EUR, GBP, RON, USD, ZAR),
+     * fetched by the platform once a day and kept there for good.
+     */
+    'forex' => [
+        // Seconds; a stored rate answers well under a second, a day not stored yet takes one Fixer call.
+        'timeout' => (int) env('MAILCHECKER_FOREX_TIMEOUT', 10),
+        // Also keep rates in your default cache store (0 = off). Today's rate is fetched shortly after
+        // 00:00 UTC, so a cached "today" answer can be the previous day's for up to this long after that.
+        'cache_minutes' => (int) env('MAILCHECKER_FOREX_CACHE_MINUTES', 60),
     ],
 ];
