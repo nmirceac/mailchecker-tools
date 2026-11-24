@@ -14,6 +14,7 @@ use MailcheckerTools\Testing\FakeMailcheckClient;
  * @method static array{url: string|null, secret: string, events: list<string>} webhook()
  * @method static array{url: string|null, secret: string, events: list<string>} updateWebhook(?string $url, bool $rotateSecret = false)
  * @method static array{ok: bool, status: int|null, error: string|null} testWebhook()
+ * @method static array{data: array<string, mixed>, cached: bool, stale: bool, fetched_at: string|null} geoip(string $ip)
  *
  * @see MailcheckClient
  */
@@ -23,6 +24,7 @@ class Mailcheck extends Facade
      * Swap in a fake client: no HTTP. Results per address, '*' for the rest (default valid):
      *
      *     Mailcheck::fake(['bad@example.com' => 'invalid', '*' => 'valid']);
+     *     Mailcheck::fake()->withGeoip(['81.196.40.181' => ['city' => 'Deva', 'country_code' => 'RO']]);
      *
      * @param  array<string, string>  $results
      */

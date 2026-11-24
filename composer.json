@@ -1,8 +1,8 @@
 {
     "name": "nmirceac/mailchecker-tools",
     "type": "library",
-    "description": "Laravel client for the WeAnswer Mail Checker (API v2): check email addresses (sync, async, batch), receive signed results by webhook, validate form input.",
-    "keywords": ["email", "verification", "smtp", "laravel", "mailchecker", "weanswer", "webhooks"],
+    "description": "Laravel client for the WeAnswer Mail Checker (API v2): check email addresses (sync, async, batch), receive signed results by webhook, validate form input, look up IP locations.",
+    "keywords": ["email", "verification", "smtp", "laravel", "mailchecker", "weanswer", "webhooks", "geoip", "ip-geolocation"],
     "homepage": "https://github.com/nmirceac/mailchecker-tools",
     "license": "proprietary",
     "authors": [

@@ -3,7 +3,8 @@
 return [
     /*
      * The Mail Checker API. The token is an application token from the portal
-     * (Applications → API), with the abilities checks:run, checks:read and webhook:manage.
+     * (Applications → API), with the abilities checks:run, checks:read and webhook:manage
+     * (and geoip:lookup for Mailcheck::geoip()).
      */
     'api' => [
         'url' => env('MAILCHECKER_API_URL'),
@@ -63,5 +64,15 @@ return [
         'allow_unknown' => (bool) env('MAILCHECKER_RULE_ALLOW_UNKNOWN', true),
         // If the platform can't be reached, let the value pass.
         'fail_open' => (bool) env('MAILCHECKER_RULE_FAIL_OPEN', true),
+    ],
+
+    /*
+     * Mailcheck::geoip(): location of an IP address (the platform caches answers for 30 days).
+     */
+    'geoip' => [
+        // Seconds; a lookup normally answers well under a second.
+        'timeout' => (int) env('MAILCHECKER_GEOIP_TIMEOUT', 10),
+        // Also keep answers with a location in your default cache store (0 = off).
+        'cache_minutes' => (int) env('MAILCHECKER_GEOIP_CACHE_MINUTES', 1440),
     ],
 ];

@@ -2,13 +2,14 @@
 
 Laravel client for the **WeAnswer Mail Checker** (API v2): check whether email addresses exist,
 synchronously, asynchronously or in batches, receive the results as signed webhooks, keep them in
-your own table, and validate form input.
+your own table, and validate form input. Also look up the location of IP addresses.
 
 * `Mailcheck::check()`: one typed client for the API (retries are safe: every check carries a reference)
 * `EmailCheck` model + `mailchecker_checks` table, kept up to date by webhooks
 * webhook receiver with signature verification, de-duplication, a hook and a Laravel event
 * `new DeliverableEmail` validation rule, with a local cache
-* `mailchecker:setup`, `mailchecker:check` and `mailchecker:sync` commands
+* `Mailcheck::geoip()`: country, city, ISP and ASN of an IPv4 or IPv6 address
+* `mailchecker:setup`, `mailchecker:check`, `mailchecker:sync` and `mailchecker:geoip` commands
 * `Mailcheck::fake()` for your tests
 
 PHP 8.1+, Laravel 10, 11, 12 and 13.
@@ -23,7 +24,7 @@ php artisan migrate
 ```
 
 Ask for an application and a token in the Mail Checker portal (**Applications → API**), with the
-abilities `checks:run`, `checks:read` and `webhook:manage`, then:
+abilities `checks:run`, `checks:read` and `webhook:manage` (and `geoip:lookup` for GeoIP), then:
 
 ```dotenv
 MAILCHECKER_API_URL=https://<mail checker host>/api/v2
@@ -83,6 +84,34 @@ $page = Mailcheck::checks(['result' => 'invalid', 'per_page' => 50]);
 
 Errors throw `MailcheckerTools\Client\MailcheckApiException` (`status`, `errors`, `isRetryable()`).
 Checks made this way are still recorded in your table when their webhook arrives.
+
+## GeoIP lookups
+
+```php
+use MailcheckerTools\Facades\Mailcheck;
+
+$geo = Mailcheck::geoip('81.196.40.181');   // or an IPv6 address
+
+$geo['data']['success'];        // false: no location (always for private and reserved addresses)
+$geo['data']['country_code'];   // "RO"
+$geo['data']['city'];           // "Deva"
+$geo['data']['asn'];            // "AS8708 - DIGI ROMANIA S.A."
+$geo['cached'];                 // answered from the Mail Checker's cache
+$geo['stale'];                  // geoiplookup.io was down: an older answer
+$geo['fetched_at'];             // when it was looked up (null for private addresses)
+```
+
+`data` is [geoiplookup.io](https://geoiplookup.io)'s answer as the Mail Checker returns it: `ip`, `isp`, `org`,
+`hostname`, `latitude`, `longitude`, `postal_code`, `city`, `country_code`, `country_name`, `continent_code`,
+`continent_name`, `region`, `district`, `timezone_name`, `connection_type`, `asn_number`, `asn_org`, `asn`,
+`currency_code`, `currency_name`, `language_code`, `language_name`, `success`, `premium`.
+
+* The Mail Checker caches answers for 30 days. Answers with a location are also kept in your default cache
+  for a day (`MAILCHECKER_GEOIP_CACHE_MINUTES`, 0 = off).
+* An invalid address throws a `MailcheckApiException` with status 422. While geoiplookup.io is unavailable
+  and nothing is cached it throws with status 503 (`isRetryable()` is true).
+* Lookups count towards the application's per-minute limit. Timeout: `MAILCHECKER_GEOIP_TIMEOUT` (10 s).
+* From the command line: `php artisan mailchecker:geoip 81.196.40.181`.
 
 ## Hooks and events
 
@@ -155,6 +184,19 @@ $fake->assertBatchChecked(100);
 ```
 
 No HTTP is made; `checkNow()` and the validation rule get the canned results.
+
+GeoIP answers default to a located address (Cape Town, ZA); override fields per address, or throw:
+
+```php
+$fake = Mailcheck::fake()->withGeoip([
+    '81.196.40.181' => ['city' => 'Deva', 'country_code' => 'RO'],
+    '10.0.0.1' => ['success' => false],
+    '*' => new \MailcheckerTools\Client\MailcheckApiException('GeoIP lookup is temporarily unavailable.', 503),
+]);
+
+$fake->assertGeoipLookedUp('81.196.40.181');
+$fake->assertNoGeoipLookups();
+```
 
 ## Development
 

@@ -6,6 +6,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Throwable;
@@ -17,6 +18,11 @@ use Throwable;
  *   id (ulid), email, reference, batch_id, mode (sync|async|batch), state (queued|waiting|completed),
  *   result (valid|invalid|unknown|null), reason, final, cached, mx_host, smtp_code, smtp_response,
  *   checked_at, requested_at, completed_at
+ *
+ * GeoIP answers (geoip()) carry geoiplookup.io's fields as the platform returns them:
+ *   ip, isp, org, hostname, latitude, longitude, postal_code, city, country_code, country_name,
+ *   continent_code, continent_name, region, district, timezone_name, connection_type, asn_number,
+ *   asn_org, asn, currency_code, currency_name, language_code, language_name, success, premium
  */
 class MailcheckClient
 {
@@ -28,6 +34,8 @@ class MailcheckClient
         protected ?string $token,
         protected int $timeout = 60,
         protected int $retries = 2,
+        protected int $geoipTimeout = 10,
+        protected int $geoipCacheMinutes = 0,
     ) {}
 
     /**
@@ -125,6 +133,45 @@ class MailcheckClient
     }
 
     /**
+     * Look up the location of an IPv4 or IPv6 address (token ability geoip:lookup). `data` is
+     * geoiplookup.io's answer; `data.success` is false when there is no location (always for
+     * private and reserved addresses). The platform caches answers for 30 days; `stale` is true
+     * when geoiplookup.io was down and an older answer was served. Answers with a location are
+     * also kept in your default cache for mailchecker.geoip.cache_minutes.
+     *
+     * @return array{data: array<string, mixed>, cached: bool, stale: bool, fetched_at: string|null}
+     *
+     * @throws MailcheckApiException 422 for an invalid address, 503 while geoiplookup.io is unavailable
+     */
+    public function geoip(string $ip): array
+    {
+        $ip = strtolower(trim($ip));
+        $key = 'mailchecker-tools:geoip:'.$ip;
+        if ($this->geoipCacheMinutes > 0 && is_array($cached = Cache::get($key))) {
+            /** @var array{data: array<string, mixed>, cached: bool, stale: bool, fetched_at: string|null} $cached */
+            return $cached;
+        }
+
+        // An address only has [0-9a-f:.]; anything else is encoded and refused by the platform (422).
+        $path = 'geoip/'.(preg_match('/^[0-9a-f:.]+$/', $ip) === 1 ? $ip : rawurlencode($ip));
+        $response = $this->request('get', $path, timeout: $this->geoipTimeout);
+        $fetchedAt = $response->json('meta.fetched_at');
+
+        $result = [
+            'data' => (array) $response->json('data'),
+            'cached' => (bool) $response->json('meta.cached', false),
+            'stale' => (bool) $response->json('meta.stale', false),
+            'fetched_at' => is_string($fetchedAt) ? $fetchedAt : null,
+        ];
+
+        if ($this->geoipCacheMinutes > 0 && ($result['data']['success'] ?? false) === true && ! $result['stale']) {
+            Cache::put($key, $result, now()->addMinutes($this->geoipCacheMinutes));
+        }
+
+        return $result;
+    }
+
+    /**
      * @param  array<array-key, mixed>  $data
      * @return array{url: string|null, secret: string, events: list<string>}
      */
@@ -152,11 +199,14 @@ class MailcheckClient
         ];
     }
 
-    /** @param array<string, mixed> $data */
-    protected function request(string $method, string $path, array $data = []): Response
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  int|null  $timeout  seconds, instead of the default (sized for a sync check)
+     */
+    protected function request(string $method, string $path, array $data = [], ?int $timeout = null): Response
     {
         try {
-            $response = $this->http()->{$method}($path, $data);
+            $response = $this->http($timeout)->{$method}($path, $data);
         } catch (ConnectionException $e) {
             throw MailcheckApiException::connection($e);
         } catch (RequestException $e) {
@@ -170,8 +220,10 @@ class MailcheckClient
         return $response;
     }
 
-    protected function http(): PendingRequest
+    protected function http(?int $timeout = null): PendingRequest
     {
+        $timeout ??= $this->timeout;
+
         if (blank($this->baseUrl)) {
             throw new MailcheckApiException('MAILCHECKER_API_URL is not configured.', 400);
         }
@@ -184,8 +236,8 @@ class MailcheckClient
             ->acceptJson()
             ->asJson()
             ->withUserAgent('mailchecker-tools (Laravel)')
-            ->timeout($this->timeout)
-            ->connectTimeout(min(5, $this->timeout))
+            ->timeout($timeout)
+            ->connectTimeout(min(5, $timeout))
             ->retry(
                 $this->retries + 1,
                 fn (int $attempt) => 250 * 2 ** ($attempt - 1),

@@ -7,6 +7,7 @@ use Illuminate\Support\Str;
 use MailcheckerTools\Client\MailcheckApiException;
 use MailcheckerTools\Client\MailcheckClient;
 use PHPUnit\Framework\Assert;
+use Throwable;
 
 /**
  * Mailcheck::fake(): answers every call locally and records it. Results are given per address
@@ -22,6 +23,12 @@ class FakeMailcheckClient extends MailcheckClient
 
     /** @var array{url: string|null, secret: string, events: list<string>} */
     public array $webhookSettings = ['url' => null, 'secret' => 'whsec_fake', 'events' => ['check.completed', 'webhook.test']];
+
+    /** @var array<string, array<string, mixed>|Throwable> GeoIP answers by address ('*' for the rest) */
+    public array $geoipAnswers = [];
+
+    /** @var list<string> addresses looked up, in order */
+    public array $geoipLookups = [];
 
     /** @param  array<string, string>  $results */
     public function __construct(public array $results = [])
@@ -86,6 +93,72 @@ class FakeMailcheckClient extends MailcheckClient
     public function testWebhook(): array
     {
         return ['ok' => true, 'status' => 200, 'error' => null];
+    }
+
+    /**
+     * Canned GeoIP answers by address ('*' for the rest): fields merged over a default answer
+     * (Cape Town, ZA), or an exception to throw.
+     *
+     *     Mailcheck::fake()->withGeoip(['10.0.0.1' => ['success' => false], '*' => ['country_code' => 'RO']]);
+     *
+     * @param  array<string, array<string, mixed>|Throwable>  $answers
+     */
+    public function withGeoip(array $answers): static
+    {
+        foreach ($answers as $ip => $answer) {
+            $this->geoipAnswers[strtolower(trim((string) $ip))] = $answer;
+        }
+
+        return $this;
+    }
+
+    public function geoip(string $ip): array
+    {
+        $ip = strtolower(trim($ip));
+        $this->geoipLookups[] = $ip;
+
+        $answer = $this->geoipAnswers[$ip] ?? $this->geoipAnswers['*'] ?? [];
+        if ($answer instanceof Throwable) {
+            throw $answer;
+        }
+
+        return ['data' => self::geoipAnswer($ip, $answer), 'cached' => false, 'stale' => false, 'fetched_at' => now()->utc()->toIso8601ZuluString()];
+    }
+
+    /**
+     * A GeoIP answer in the platform's shape (a located address unless overridden).
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    public static function geoipAnswer(string $ip, array $overrides = []): array
+    {
+        return array_merge([
+            'ip' => $ip, 'isp' => 'Fake Telecom', 'org' => 'Fake Telecom', 'hostname' => '',
+            'latitude' => -33.9249, 'longitude' => 18.4241, 'postal_code' => '', 'city' => 'Cape Town',
+            'country_code' => 'ZA', 'country_name' => 'South Africa', 'continent_code' => 'AF', 'continent_name' => 'Africa',
+            'region' => 'Western Cape', 'district' => '', 'timezone_name' => 'Africa/Johannesburg', 'connection_type' => 'Corporate',
+            'asn_number' => 64500, 'asn_org' => 'Fake Telecom', 'asn' => 'AS64500 - Fake Telecom',
+            'currency_code' => 'ZAR', 'currency_name' => 'South African Rand', 'language_code' => 'en', 'language_name' => 'English',
+            'success' => true, 'premium' => false,
+        ], $overrides);
+    }
+
+    /** Assert an address was looked up ($times times), or that a lookup matches the callback. */
+    public function assertGeoipLookedUp(string|Closure|null $ip = null, int $times = 1): void
+    {
+        $matches = array_filter($this->geoipLookups, fn (string $looked) => match (true) {
+            $ip === null => true,
+            $ip instanceof Closure => (bool) $ip($looked),
+            default => $looked === strtolower(trim($ip)),
+        });
+
+        Assert::assertCount($times, $matches, 'Unexpected number of GeoIP lookups'.(is_string($ip) ? " for {$ip}" : '').'.');
+    }
+
+    public function assertNoGeoipLookups(): void
+    {
+        Assert::assertSame([], $this->geoipLookups, 'IP addresses were looked up unexpectedly.');
     }
 
     /** Assert an address was checked ($times times), or that a check matches the callback. */
