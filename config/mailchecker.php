@@ -77,7 +77,7 @@ return [
     ],
 
     /*
-     * Mailcheck::exchangeRate() and convert(): currency exchange rates (EUR, GBP, RON, USD, ZAR),
+     * Mailcheck::exchangeRate() and convert(): currency exchange rates (AUD, CAD, CHF, EUR, GBP, JPY, RON, SEK, USD, ZAR),
      * fetched by the platform once a day and kept there for good.
      */
     'forex' => [

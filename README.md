@@ -10,7 +10,7 @@ exchange rates.
 * webhook receiver with signature verification, de-duplication, a hook and a Laravel event
 * `new DeliverableEmail` validation rule, with a local cache
 * `Mailcheck::geoip()`: country, city, ISP and ASN of an IPv4 or IPv6 address
-* `Mailcheck::exchangeRate()` and `Mailcheck::convert()`: daily exchange rates (EUR, GBP, RON, USD, ZAR)
+* `Mailcheck::exchangeRate()` and `Mailcheck::convert()`: daily exchange rates (AUD, CAD, CHF, EUR, GBP, JPY, RON, SEK, USD, ZAR)
 * `mailchecker:setup`, `mailchecker:check`, `mailchecker:sync`, `mailchecker:geoip` and `mailchecker:forex` commands
 * `Mailcheck::fake()` for your tests
 
@@ -132,7 +132,7 @@ $rate['fetched_at'];   // when the Mail Checker got it from Fixer (null for the 
 $usd = Mailcheck::convert(1500, 'ZAR', 'USD');                // 1500 × the rate, not rounded
 ```
 
-* Currencies: EUR, GBP, RON, USD, ZAR (any direction; the same currency is 1). The Mail Checker fetches
+* Currencies: AUD, CAD, CHF, EUR, GBP, JPY, RON, SEK, USD, ZAR (any direction; the same currency is 1). The Mail Checker fetches
   every pair from Fixer once a day, shortly after 00:00 UTC, and keeps them; a past day it doesn't have yet
   is fetched on the first request.
 * Answers that aren't stale are also kept in your default cache for an hour (`MAILCHECKER_FOREX_CACHE_MINUTES`,

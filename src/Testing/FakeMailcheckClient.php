@@ -38,7 +38,10 @@ class FakeMailcheckClient extends MailcheckClient
     public array $exchangeRateRequests = [];
 
     /** How many of each currency one EUR buys by default (the platform's FOREX_DRIVER=fake rates). */
-    public const EUR_RATES = ['EUR' => 1.0, 'GBP' => 0.8, 'RON' => 5.0, 'USD' => 1.25, 'ZAR' => 20.0];
+    public const EUR_RATES = [
+        'AUD' => 2.0, 'CAD' => 1.6, 'CHF' => 0.9375, 'EUR' => 1.0, 'GBP' => 0.8,
+        'JPY' => 200.0, 'RON' => 5.0, 'SEK' => 12.5, 'USD' => 1.25, 'ZAR' => 20.0,
+    ];
 
     /** @param  array<string, string>  $results */
     public function __construct(public array $results = [])

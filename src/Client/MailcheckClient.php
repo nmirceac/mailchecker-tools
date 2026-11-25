@@ -178,7 +178,7 @@ class MailcheckClient
     }
 
     /**
-     * How many $to one $from buys (token ability forex:read). Currencies: EUR, GBP, RON, USD, ZAR.
+     * How many $to one $from buys (token ability forex:read). Currencies: AUD, CAD, CHF, EUR, GBP, JPY, RON, SEK, USD, ZAR.
      * The platform fetches the rates from Fixer once a day (shortly after 00:00 UTC) and keeps
      * them; `date` is the UTC day of the rate. `stale` is true when today's rates weren't
      * available and an earlier day's were returned. Answers that aren't stale are also kept in

@@ -78,13 +78,13 @@ class ForexTest extends TestCase
     {
         Http::fake([
             self::API.'/forex/*' => Http::sequence()
-                ->push(['error' => ['message' => 'Unsupported currency JPY.', 'status' => 422, 'errors' => ['from' => ['Unsupported currency JPY.']]]], 422)
+                ->push(['error' => ['message' => 'Unsupported currency BRL.', 'status' => 422, 'errors' => ['from' => ['Unsupported currency BRL.']]]], 422)
                 ->push(['error' => ['message' => 'Exchange rates are temporarily unavailable.', 'status' => 503]], 503, ['Retry-After' => '60'])
                 ->push(['error' => ['message' => 'Exchange rates are temporarily unavailable.', 'status' => 503]], 503, ['Retry-After' => '60']),
         ]);
 
         try {
-            Mailcheck::exchangeRate('JPY', 'USD');
+            Mailcheck::exchangeRate('BRL', 'USD');
             $this->fail('Expected an exception');
         } catch (MailcheckApiException $e) {
             $this->assertSame(422, $e->status);
@@ -111,15 +111,16 @@ class ForexTest extends TestCase
         $this->assertSame(18.2, Mailcheck::exchangeRate('USD', 'ZAR')['rate']);
         $this->assertSame(1 / 18.2, Mailcheck::exchangeRate('zar', 'usd')['rate']);
         $this->assertSame(1.5625, Mailcheck::exchangeRate('GBP', 'USD')['rate'], 'default: the platform fake rates');
+        $this->assertSame(160.0, Mailcheck::exchangeRate('USD', 'JPY')['rate']);
         $this->assertSame(1.0, Mailcheck::exchangeRate('RON', 'RON')['rate']);
         $this->assertSame(1820.0, Mailcheck::convert(100, 'USD', 'ZAR'));
         $this->assertSame('2025-06-30', Mailcheck::exchangeRate('USD', 'ZAR', '2025-06-30')['date']);
         $this->assertThrows(fn () => Mailcheck::exchangeRate('EUR', 'RON'), MailcheckApiException::class);
-        $this->assertThrows(fn () => Mailcheck::exchangeRate('JPY', 'USD'), MailcheckApiException::class);
+        $this->assertThrows(fn () => Mailcheck::exchangeRate('BRL', 'USD'), MailcheckApiException::class);
 
         $fake->assertExchangeRateRequested('USD/ZAR', 3);
         $fake->assertExchangeRateRequested(fn (string $pair) => str_starts_with($pair, 'ZAR/'));
-        $fake->assertExchangeRateRequested(null, 8);
+        $fake->assertExchangeRateRequested(null, 9);
         Http::assertNothingSent();
     }
 
