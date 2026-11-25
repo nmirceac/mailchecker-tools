@@ -143,11 +143,12 @@ $rate['fetched_at'];   // when the Mail Checker got it from Fixer (null for the 
 $usd = Mailcheck::convert(1500, 'ZAR', 'USD');                // 1500 × the rate, not rounded
 ```
 
-* Currencies: AUD, CAD, CHF, EUR, GBP, JPY, RON, SEK, USD, ZAR (any direction; the same currency is 1). The Mail Checker fetches
-  every pair from Fixer once a day, shortly after 00:00 UTC, and keeps them; a past day it doesn't have yet
-  is fetched on the first request.
+* Currencies: AUD, CAD, CHF, EUR, GBP, JPY, RON, SEK, USD, ZAR (any direction; the same currency is 1). The Mail Checker fixes
+  each day's rate once, at 08:00 UTC (10:00 SAST), from the live market, and keeps it all day; after midnight
+  UTC that day is replaced by its official close. Before 08:00 UTC, "today" is answered with the previous
+  day's rate (`date` says which day). A past day it doesn't have yet is fetched on the first request.
 * Answers that aren't stale are also kept in your default cache for an hour (`MAILCHECKER_FOREX_CACHE_MINUTES`,
-  0 = off), so a "today" answer can be the previous day's for up to that long after midnight UTC.
+  0 = off), so a "today" answer can be the previous day's for up to that long after the 08:00 UTC fix.
 * An unsupported currency or a bad date (future, before 1999, not `Y-m-d`) throws a `MailcheckApiException`
   with status 422. While Fixer is unavailable and nothing is stored it throws with status 503 (`isRetryable()`
   is true).

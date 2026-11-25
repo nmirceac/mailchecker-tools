@@ -182,8 +182,8 @@ class MailcheckClient
 
     /**
      * How many $to one $from buys (token ability forex:read). Currencies: AUD, CAD, CHF, EUR, GBP, JPY, RON, SEK, USD, ZAR.
-     * The platform fetches the rates from Fixer once a day (shortly after 00:00 UTC) and keeps
-     * them; `date` is the UTC day of the rate. `stale` is true when today's rates weren't
+     * The platform fixes each day's rate once, at 08:00 UTC, and replaces it with the day's close
+     * after midnight; before 08:00 UTC "today" is the previous day. `date` is the UTC day of the rate. `stale` is true when today's rates weren't
      * available and an earlier day's were returned. Answers that aren't stale are also kept in
      * your default cache for mailchecker.forex.cache_minutes.
      *
