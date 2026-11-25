@@ -99,6 +99,11 @@ abstract class TestCase extends BaseTestCase
             'checked_at' => '2026-11-17T10:00:00Z',
             'requested_at' => '2026-11-17T10:00:00Z',
             'completed_at' => '2026-11-17T10:00:00Z',
+            'catch_all' => false,
+            'role' => false,
+            'free' => false,
+            'disposable' => false,
+            'did_you_mean' => null,
         ];
     }
 }

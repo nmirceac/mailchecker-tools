@@ -29,7 +29,7 @@ class Mailcheck extends Facade
      *     Mailcheck::fake()->withGeoip(['81.196.40.181' => ['city' => 'Deva', 'country_code' => 'RO']]);
      *     Mailcheck::fake()->withExchangeRates(['USD/ZAR' => 18.2]);
      *
-     * @param  array<string, string>  $results
+     * @param  array<string, string|array<string, mixed>>  $results  email (or "*") => valid|invalid|unknown, or ['result' => …, 'disposable' => true, …]
      */
     public static function fake(array $results = []): FakeMailcheckClient
     {

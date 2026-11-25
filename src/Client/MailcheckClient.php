@@ -18,7 +18,10 @@ use Throwable;
  * Check arrays follow the API's check resource:
  *   id (ulid), email, reference, batch_id, mode (sync|async|batch), state (queued|waiting|completed),
  *   result (valid|invalid|unknown|null), reason, final, cached, mx_host, smtp_code, smtp_response,
- *   checked_at, requested_at, completed_at
+ *   checked_at, requested_at, completed_at,
+ *   catch_all (the domain accepts every address: the result is then unknown, reason accept_all; null when not known),
+ *   role (info@, support@, …), free (a personal mailbox from a public provider or consumer ISP),
+ *   disposable (a throwaway provider), did_you_mean (the address with a mistyped domain corrected, or null)
  *
  * GeoIP answers (geoip()) carry geoiplookup.io's fields as the platform returns them:
  *   ip, isp, org, hostname, latitude, longitude, postal_code, city, country_code, country_name,

@@ -68,10 +68,21 @@ EmailCheck::requestMany($emails);                        // async, in batches of
 |---|---|
 | `valid` | the mailbox exists |
 | `invalid` | it doesn't, or the domain has no mail server |
-| `unknown` | no definite answer (greylisting, timeouts, blocks); usually safe to accept |
+| `unknown` | no definite answer (greylisting, timeouts, blocks, or a domain that accepts every address); usually safe to accept |
 
 A sync answer can be `unknown` with `final = false`: the Mail Checker keeps rechecking, and a webhook
 completes the row when it knows more.
+
+Every answer also says what the address is (kept in `details`, read with these helpers):
+
+```php
+$check->isCatchAll();   // the domain accepts every address, so the mailbox can't be confirmed
+                        // (result unknown, reason accept_all, final straight away)
+$check->isDisposable(); // a throwaway provider (mailinator, yopmail, …)
+$check->isRole();       // info@, support@, sales@, …: a function rather than a person
+$check->isFree();       // a personal mailbox (Gmail, Yahoo, Outlook, consumer ISPs like MWEB), not a company domain
+$check->didYouMean();   // 'jane@gmail.com' for jane@gamil.com, or null
+```
 
 ### Using the API directly
 
@@ -172,6 +183,9 @@ $request->validate([
 ]);
 ```
 
+Throwaway addresses pass by default; refuse them with `new DeliverableEmail(allowDisposable: false)` (or
+`MAILCHECKER_RULE_ALLOW_DISPOSABLE=false`).
+
 The rule makes a sync check and caches the result per address (`MAILCHECKER_RULE_CACHE_MINUTES`, 1 day).
 
 ## Webhooks
@@ -213,7 +227,16 @@ $fake->assertNothingChecked();
 $fake->assertBatchChecked(100);
 ```
 
-No HTTP is made; `checkNow()` and the validation rule get the canned results.
+No HTTP is made; `checkNow()` and the validation rule get the canned results. Give an array to set the
+address flags too:
+
+```php
+Mailcheck::fake([
+    'temp@mailinator.com' => ['result' => 'valid', 'disposable' => true],
+    'jane@ymail.com' => ['catch_all' => true],          // unknown, reason accept_all
+    'info@gamil.com' => ['result' => 'invalid', 'role' => true, 'did_you_mean' => 'info@gmail.com'],
+]);
+```
 
 GeoIP answers default to a located address (Cape Town, ZA); override fields per address, or throw:
 

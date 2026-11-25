@@ -60,8 +60,10 @@ return [
     'rule' => [
         // Reuse a result for the same address for this long (default cache store).
         'cache_minutes' => (int) env('MAILCHECKER_RULE_CACHE_MINUTES', 1440),
-        // "unknown" (greylisting, timeouts) passes unless set to false.
+        // "unknown" (greylisting, timeouts, a domain that accepts every address) passes unless set to false.
         'allow_unknown' => (bool) env('MAILCHECKER_RULE_ALLOW_UNKNOWN', true),
+        // Throwaway (disposable) addresses pass unless set to false.
+        'allow_disposable' => (bool) env('MAILCHECKER_RULE_ALLOW_DISPOSABLE', true),
         // If the platform can't be reached, let the value pass.
         'fail_open' => (bool) env('MAILCHECKER_RULE_FAIL_OPEN', true),
     ],

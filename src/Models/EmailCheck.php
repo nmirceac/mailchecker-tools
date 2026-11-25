@@ -29,7 +29,7 @@ use MailcheckerTools\MailcheckerTools;
  * @property bool $cached
  * @property string|null $mx_host
  * @property int|null $smtp_code
- * @property array<string, mixed>|null $details
+ * @property array<string, mixed>|null $details the platform's answer as received (incl. catch_all, role, free, disposable, did_you_mean)
  * @property Carbon|null $requested_at
  * @property Carbon|null $checked_at
  * @property Carbon|null $completed_at
@@ -202,5 +202,37 @@ class EmailCheck extends Model
     public function isUnknown(): bool
     {
         return $this->result === CheckResult::Unknown->value;
+    }
+
+    /** The domain accepts every address, so this mailbox can't be confirmed (the result is unknown, reason accept_all). */
+    public function isCatchAll(): bool
+    {
+        return ($this->details['catch_all'] ?? null) === true;
+    }
+
+    /** A role address (info@, support@, sales@, …): a function rather than a person. */
+    public function isRole(): bool
+    {
+        return ($this->details['role'] ?? null) === true;
+    }
+
+    /** A personal mailbox from a public provider or consumer ISP (Gmail, Yahoo, Outlook, MWEB, …), not a company domain. */
+    public function isFree(): bool
+    {
+        return ($this->details['free'] ?? null) === true;
+    }
+
+    /** A throwaway (disposable) email provider. */
+    public function isDisposable(): bool
+    {
+        return ($this->details['disposable'] ?? null) === true;
+    }
+
+    /** The address with its domain corrected when the domain looks like a typo (jane@gamil.com → jane@gmail.com), or null. */
+    public function didYouMean(): ?string
+    {
+        $suggestion = $this->details['did_you_mean'] ?? null;
+
+        return is_string($suggestion) && $suggestion !== '' ? $suggestion : null;
     }
 }

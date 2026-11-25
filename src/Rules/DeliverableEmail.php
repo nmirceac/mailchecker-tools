@@ -15,10 +15,12 @@ use MailcheckerTools\Client\MailcheckClient;
  *
  *     'email' => ['required', 'email', new DeliverableEmail],
  *     'email' => ['required', 'email', new DeliverableEmail(allowUnknown: false, failOpen: false)],
+ *     'email' => ['required', 'email', new DeliverableEmail(allowDisposable: false)],
  *
  * Results are cached per address (mailchecker.rule.cache_minutes). "unknown" (greylisting,
- * timeouts) passes by default; if the platform can't be reached the value passes too, unless
- * failOpen is false.
+ * timeouts, a domain that accepts every address) passes by default; if the platform can't be
+ * reached the value passes too, unless failOpen is false. Throwaway (disposable) addresses pass
+ * unless allowDisposable is false.
  */
 class DeliverableEmail implements ValidationRule
 {
@@ -26,6 +28,7 @@ class DeliverableEmail implements ValidationRule
         private ?bool $allowUnknown = null,
         private ?bool $failOpen = null,
         private ?int $cacheMinutes = null,
+        private ?bool $allowDisposable = null,
     ) {}
 
     public function validate(string $attribute, mixed $value, Closure $fail): void
@@ -40,9 +43,10 @@ class DeliverableEmail implements ValidationRule
         $allowUnknown = $this->allowUnknown ?? (bool) config('mailchecker.rule.allow_unknown', true);
         $failOpen = $this->failOpen ?? (bool) config('mailchecker.rule.fail_open', true);
         $minutes = $this->cacheMinutes ?? (int) config('mailchecker.rule.cache_minutes', 1440);
+        $allowDisposable = $this->allowDisposable ?? (bool) config('mailchecker.rule.allow_disposable', true);
 
         try {
-            $result = $this->result($email, $minutes);
+            ['result' => $result, 'disposable' => $disposable] = $this->result($email, $minutes);
         } catch (MailcheckApiException $e) {
             if ($e->status === 422) {
                 $fail('The :attribute must be a valid email address.');
@@ -59,27 +63,33 @@ class DeliverableEmail implements ValidationRule
 
         if ($result === 'invalid') {
             $fail('The :attribute does not exist. Please check the address.');
+        } elseif ($disposable && ! $allowDisposable) {
+            $fail('The :attribute is a disposable address. Please use a permanent one.');
         } elseif ($result === 'unknown' && ! $allowUnknown) {
             $fail('The :attribute could not be verified.');
         }
     }
 
-    private function result(string $email, int $minutes): ?string
+    /** @return array{result: string|null, disposable: bool} */
+    private function result(string $email, int $minutes): array
     {
-        $key = 'mailchecker-tools:rule:'.sha1($email);
+        $key = 'mailchecker-tools:rule:v2:'.sha1($email);
         $cached = $minutes > 0 ? Cache::get($key) : null;
-        if (is_string($cached)) {
-            return $cached;
+        if (is_array($cached) && array_key_exists('result', $cached)) {
+            return ['result' => is_string($cached['result']) ? $cached['result'] : null, 'disposable' => (bool) ($cached['disposable'] ?? false)];
         }
 
         $check = app(MailcheckClient::class)->check($email);
-        $result = isset($check['result']) ? (string) $check['result'] : null;
+        $answer = [
+            'result' => isset($check['result']) ? (string) $check['result'] : null,
+            'disposable' => ($check['disposable'] ?? false) === true,
+        ];
 
         // An unknown that is still being rechecked isn't cached: the next try may know more.
-        if ($result !== null && $minutes > 0 && ($result !== 'unknown' || ($check['final'] ?? false))) {
-            Cache::put($key, $result, now()->addMinutes($minutes));
+        if ($answer['result'] !== null && $minutes > 0 && ($answer['result'] !== 'unknown' || ($check['final'] ?? false))) {
+            Cache::put($key, $answer, now()->addMinutes($minutes));
         }
 
-        return $result;
+        return $answer;
     }
 }

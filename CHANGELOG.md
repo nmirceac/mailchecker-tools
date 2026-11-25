@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.5 (2026-11-25), pre-release
+
+- Check answers say what an address is: `catch_all` (the domain accepts every address; the result is then `unknown`, reason `accept_all`, final straight away), `role`, `free`, `disposable` and `did_you_mean`. They're kept in `details`; read them with `EmailCheck::isCatchAll()`, `isRole()`, `isFree()`, `isDisposable()` and `didYouMean()`. No migration needed.
+- `DeliverableEmail(allowDisposable: false)` (or `MAILCHECKER_RULE_ALLOW_DISPOSABLE=false`) refuses throwaway addresses. The rule's cache keeps the flag (new cache keys, so earlier cached results are simply asked again).
+- `Mailcheck::fake()` takes arrays with flags: `['temp@mailinator.com' => ['result' => 'valid', 'disposable' => true]]`.
+
 ## 0.0.4 (2026-11-25), pre-release
 
 - Exchange rates for five more currencies: AUD, CAD, CHF, JPY and SEK (the platform now serves AUD, CAD, CHF, EUR, GBP, JPY, RON, SEK, USD and ZAR). No API change: `Mailcheck::exchangeRate()` and `convert()` already accepted any code the platform supports.

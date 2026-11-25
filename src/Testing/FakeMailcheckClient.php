@@ -43,7 +43,10 @@ class FakeMailcheckClient extends MailcheckClient
         'JPY' => 200.0, 'RON' => 5.0, 'SEK' => 12.5, 'USD' => 1.25, 'ZAR' => 20.0,
     ];
 
-    /** @param  array<string, string>  $results */
+    /**
+     * @param  array<string, string|array<string, mixed>>  $results  email (or "*") => valid|invalid|unknown, or an
+     *                                                               array with result and flags, e.g. ['result' => 'valid', 'disposable' => true]
+     */
     public function __construct(public array $results = [])
     {
         parent::__construct('https://mailchecker.fake/api/v2', 'fake-token');
@@ -262,7 +265,12 @@ class FakeMailcheckClient extends MailcheckClient
     /** @return array<string, mixed> */
     private function make(string $email, ?string $reference, string $mode, bool $queued): array
     {
-        $result = $this->results[$email] ?? $this->results['*'] ?? 'valid';
+        $spec = $this->results[$email] ?? $this->results['*'] ?? 'valid';
+        $spec = is_array($spec) ? $spec : ['result' => $spec];
+        $catchAll = $spec['catch_all'] ?? null;
+        // As on the platform: a catch-all domain makes an accepted address unknown (reason accept_all).
+        $result = (string) ($spec['result'] ?? ($catchAll === true ? 'unknown' : 'valid'));
+        $reason = $catchAll === true && $result === 'unknown' ? 'accept_all' : (['valid' => 'accepted', 'invalid' => 'rejected'][$result] ?? 'greylisted');
         $now = now()->utc()->toIso8601ZuluString();
 
         return [
@@ -273,7 +281,7 @@ class FakeMailcheckClient extends MailcheckClient
             'mode' => $mode,
             'state' => $queued ? 'queued' : 'completed',
             'result' => $queued ? null : $result,
-            'reason' => $queued ? null : ['valid' => 'accepted', 'invalid' => 'rejected'][$result] ?? 'greylisted',
+            'reason' => $queued ? null : $reason,
             'final' => ! $queued,
             'cached' => false,
             'mx_host' => $queued ? null : 'mx.fake.test',
@@ -282,6 +290,11 @@ class FakeMailcheckClient extends MailcheckClient
             'checked_at' => $queued ? null : $now,
             'requested_at' => $now,
             'completed_at' => $queued ? null : $now,
+            'catch_all' => $queued ? null : ($catchAll ?? ($result === 'unknown' ? null : false)),
+            'role' => (bool) ($spec['role'] ?? false),
+            'free' => (bool) ($spec['free'] ?? false),
+            'disposable' => (bool) ($spec['disposable'] ?? false),
+            'did_you_mean' => isset($spec['did_you_mean']) ? (string) $spec['did_you_mean'] : null,
         ];
     }
 }
