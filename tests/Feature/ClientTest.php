@@ -5,8 +5,10 @@ namespace MailcheckerTools\Tests\Feature;
 use Closure;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Promise\Create;
+use Illuminate\Http\Client\Events\RequestSending;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use MailcheckerTools\Client\MailcheckApiException;
 use MailcheckerTools\Client\MailcheckClient;
@@ -17,6 +19,22 @@ class ClientTest extends TestCase
     private const CK1 = 'https://ck1.mailchecker.test/api/v2';
 
     private const CK2 = 'https://ck2.mailchecker.test/api/v2';
+
+    /**
+     * Every request the client sent, one that couldn't connect included. Http::recorded() leaves those out
+     * on Laravel 10 (only 11+ records them), while RequestSending fires before every attempt on all versions.
+     *
+     * @var list<Request>
+     */
+    private array $sent = [];
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Event::listen(RequestSending::class, function (RequestSending $event) {
+            $this->sent[] = $event->request;
+        });
+    }
 
     public function test_a_sync_check_sends_a_reference_and_returns_the_result(): void
     {
@@ -136,7 +154,7 @@ class ClientTest extends TestCase
             $this->assertTrue($e->isRetryable());
         }
 
-        Http::assertSentCount(2);   // retries = 1 in the tests
+        $this->assertCount(2, $this->sent);   // retries = 1 in the tests
         $this->assertFalse(Cache::has('mailchecker-tools:down:'.sha1(self::API)));
     }
 
@@ -147,7 +165,7 @@ class ClientTest extends TestCase
 
         $this->assertSame('valid', $client->check('someone@example.com', reference: 'ref-1')['result']);
         $this->assertSame([self::CK1.'/checks', self::CK2.'/checks'], $this->sentUrls());
-        $this->assertSame(['ref-1'], collect(Http::recorded())->map(fn ($pair) => $pair[0]['reference'])->unique()->values()->all());
+        $this->assertSame(['ref-1'], collect($this->sent)->map(fn (Request $request) => $request['reference'])->unique()->values()->all());
 
         // ck1 is tried last for a minute: the next call goes straight to ck2.
         $client->check('other@example.com');
@@ -285,7 +303,7 @@ class ClientTest extends TestCase
     /** @return list<string> */
     private function sentUrls(): array
     {
-        return collect(Http::recorded())->map(fn ($pair) => $pair[0]->url())->values()->all();
+        return array_map(fn (Request $request) => $request->url(), $this->sent);
     }
 
     /** A worker that can't be reached (what Http::failedConnection() does from Laravel 11). */
