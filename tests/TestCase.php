@@ -48,7 +48,7 @@ abstract class TestCase extends BaseTestCase
         }
         $app['config']->set('queue.default', 'sync');
         $app['config']->set('cache.default', 'array');
-        $app['config']->set('mailchecker.api.url', self::API);
+        $app['config']->set('mailchecker.api.hosts', 'mailchecker.test');   // the API is self::API
         $app['config']->set('mailchecker.api.token', 'test-token');
         $app['config']->set('mailchecker.api.retries', 1);
         $app['config']->set('mailchecker.webhook.secret', self::SECRET);

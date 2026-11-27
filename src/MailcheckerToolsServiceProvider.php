@@ -19,15 +19,18 @@ class MailcheckerToolsServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/mailchecker.php', 'mailchecker');
 
+        // Not set or empty (also in a config file published before 0.0.6): the WeAnswer workers ck1 and ck2.
         $this->app->singleton(MailcheckClient::class, fn () => new MailcheckClient(
-            config('mailchecker.api.url'),
+            config('mailchecker.api.hosts') ?: MailcheckClient::DEFAULT_HOSTS,
             config('mailchecker.api.token'),
-            (int) config('mailchecker.api.timeout', 60),
+            (int) config('mailchecker.api.timeout', 10),
             (int) config('mailchecker.api.retries', 2),
             (int) config('mailchecker.geoip.timeout', 10),
             (int) config('mailchecker.geoip.cache_minutes', 1440),
             (int) config('mailchecker.forex.timeout', 10),
             (int) config('mailchecker.forex.cache_minutes', 60),
+            spread: (bool) config('mailchecker.api.spread', true),
+            connectTimeout: (int) config('mailchecker.api.connect_timeout', 1),
         ));
     }
 

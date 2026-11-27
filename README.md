@@ -30,15 +30,39 @@ abilities `checks:run`, `checks:read` and `webhook:manage` (and `geoip:lookup` f
 exchange rates), then:
 
 ```dotenv
-MAILCHECKER_API_URL=https://<mail checker host>/api/v2
 MAILCHECKER_API_TOKEN=12|mc_…
 ```
+
+**The Mail Checker's servers.** By default the package uses the WeAnswer workers `ck1.weanswer.it` and
+`ck2.weanswer.it` (`https://<host>/api/v2`); the token works on every worker. Set `MAILCHECKER_HOSTS` only to
+use other servers (a port, or `http://` for a local Mail Checker, can be given):
+
+```dotenv
+MAILCHECKER_HOSTS=ck1.weanswer.it,ck2.weanswer.it   # the default
+MAILCHECKER_API_SPREAD=true    # the default: each call starts at a random worker; false = in order (primary first)
+```
+
+A call that can't reach a worker, or gets a server error (5xx) from it, goes straight to the next one; each
+worker is asked once per call, so with two workers it is the first, then the second, then the call fails
+(and `DeliverableEmail` lets the value through, unless `failOpen` is false). A worker that couldn't be
+reached (or answered 502, 503 or 504) is asked last for the next minute. A rate limit (429) is retried on
+the same worker (up to `MAILCHECKER_API_RETRIES` times): the limit is the same on all of them. Other client
+errors (4xx) fail at once. Every check carries a reference, so a check retried on another worker isn't made
+twice. With a single host, connection errors and 5xx are retried on it `MAILCHECKER_API_RETRIES` times.
+
+**Timeouts.** A worker gets 1 s to accept the connection (`MAILCHECKER_API_CONNECT_TIMEOUT`, DNS and TLS
+included) and 10 s for the whole request (`MAILCHECKER_API_TIMEOUT`). A check usually takes 3–4 s; the
+platform allows itself up to 45 s for slow mail servers, but none of the first few hundred checks took over
+7 s. If one takes longer than 10 s, the call goes to the other worker, which returns the unanswered check
+at once (same reference); the platform still finishes it, so the next check of that address answers from
+its cache. With two workers a failure is known within about 2 s when both are unreachable, and within about
+20 s when both accept the connection and then hang.
 
 ```bash
 php artisan mailchecker:setup --write-env
 ```
 
-`setup` checks the token, registers this app's webhook URL (`/mailchecker/webhook`; pass `--url=` to
+`setup` checks the token (on each host: it fails if one can't be reached), registers this app's webhook URL (`/mailchecker/webhook`; pass `--url=` to
 use another), writes `MAILCHECKER_WEBHOOK_SECRET` to `.env` and sends a test event. The webhook URL must
 be reachable from the Mail Checker over HTTPS. Async checks and hooks run on your queue: run a worker.
 
@@ -49,7 +73,7 @@ Publish the config (`--tag=mailchecker-tools-config`) to change the table, model
 ```php
 use App\Models\EmailCheck;
 
-$check = EmailCheck::checkNow('someone@example.com');   // waits for the answer (up to ~45 s)
+$check = EmailCheck::checkNow('someone@example.com');   // waits for the answer (usually 3–4 s, at most 10 s)
 $check->isValid(); $check->isInvalid(); $check->isUnknown(); $check->isFinal();
 
 EmailCheck::request('someone@example.com');             // async: queued, the webhook completes it

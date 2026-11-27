@@ -7,12 +7,26 @@ return [
      * (and geoip:lookup for Mailcheck::geoip(), forex:read for Mailcheck::exchangeRate()).
      */
     'api' => [
-        'url' => env('MAILCHECKER_API_URL'),
+        // The Mail Checker workers, separated by commas: ck1.weanswer.it,ck2.weanswer.it (the default when
+        // not set or empty, MailcheckClient::DEFAULT_HOSTS). The API is https://<host>/api/v2; a port or
+        // another scheme can be given (http://127.0.0.1:8001). A call that can't reach a worker, or gets a
+        // server error from it, goes to the next; each is asked once per call. A worker that can't be
+        // reached is tried last for a minute.
+        'hosts' => env('MAILCHECKER_HOSTS'),
+        // With several hosts: true starts each call at a random one, so the workers share the load;
+        // false always tries them in the order given (the first is the primary, the others are backups).
+        'spread' => (bool) env('MAILCHECKER_API_SPREAD', true),
         'token' => env('MAILCHECKER_API_TOKEN'),
-        // A sync check can take up to ~45 s on the platform.
-        'timeout' => (int) env('MAILCHECKER_API_TIMEOUT', 60),
-        // Retries on connection errors, 429 and 5xx. Every check carries a reference, so a
-        // retry never checks an address twice.
+        // Seconds for a whole request, connecting included. A sync check usually takes 3–4 s (none of the
+        // first few hundred took over 7 s); the platform allows itself up to 45 s for slow mail servers, and
+        // if a check takes longer than this the call fails (the platform still finishes it, so the next check
+        // of the address answers from its cache).
+        'timeout' => (int) env('MAILCHECKER_API_TIMEOUT', 10),
+        // Seconds to connect (DNS, TCP and TLS). A worker that can't be reached in time: the call goes to the next.
+        'connect_timeout' => (int) env('MAILCHECKER_API_CONNECT_TIMEOUT', 1),
+        // Retries on 429, and on connection errors and 5xx when there is only one host (with several, the
+        // next worker is asked instead). Every check carries a reference, so a retry, on the same worker or
+        // another, never checks an address twice.
         'retries' => (int) env('MAILCHECKER_API_RETRIES', 2),
     ],
 

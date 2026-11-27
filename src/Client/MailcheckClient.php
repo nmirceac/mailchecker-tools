@@ -5,7 +5,6 @@ namespace MailcheckerTools\Client;
 use DateTimeInterface;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -36,19 +35,82 @@ class MailcheckClient
     /** Addresses per batch call (the platform's limit). */
     public const BATCH_MAX = 100;
 
+    /** Seconds a URL that couldn't be reached (or answered 502/503/504) is tried last. */
+    public const DOWN_SECONDS = 60;
+
+    /** The WeAnswer Mail Checker workers: used when MAILCHECKER_HOSTS is not set (or empty). */
+    public const DEFAULT_HOSTS = ['ck1.weanswer.it', 'ck2.weanswer.it'];
+
+    /** Where the API lives on every host. */
+    public const API_PATH = '/api/v2';
+
+    /** @var list<string> the API URLs, one per Mail Checker worker (https://<host>/api/v2) */
+    protected array $baseUrls;
+
+    /**
+     * @param  string|list<string>|null  $hosts  the Mail Checker workers: one host, several separated by commas,
+     *                                           or a list (see apiUrls()); a call that can't reach one, or gets a
+     *                                           server error from it, goes to the next
+     * @param  bool  $spread  with several hosts, start each call at a random one (false: always in the order given)
+     */
     public function __construct(
-        protected ?string $baseUrl,
+        string|array|null $hosts,
         protected ?string $token,
-        protected int $timeout = 60,
+        protected int $timeout = 10,
         protected int $retries = 2,
         protected int $geoipTimeout = 10,
         protected int $geoipCacheMinutes = 0,
         protected int $forexTimeout = 10,
         protected int $forexCacheMinutes = 0,
-    ) {}
+        protected bool $spread = true,
+        protected int $connectTimeout = 1,
+    ) {
+        $this->baseUrls = self::apiUrls($hosts);
+    }
 
     /**
-     * Check one address. Sync (default): the result comes back now (up to ~45 s); when it is
+     * The API URL of each host: "ck1.weanswer.it" → https://ck1.weanswer.it/api/v2. A port is kept
+     * ("ck1.weanswer.it:8443"), and so is a scheme other than https ("http://127.0.0.1:8001" for a local
+     * Mail Checker); any path is ignored. Blank and repeated entries are dropped.
+     *
+     * @param  string|array<array-key, mixed>|null  $hosts
+     * @return list<string>
+     */
+    public static function apiUrls(string|array|null $hosts): array
+    {
+        $urls = [];
+        foreach (is_array($hosts) ? $hosts : explode(',', (string) $hosts) as $entry) {
+            $entry = trim(is_string($entry) ? $entry : '');
+            $parts = $entry === '' ? false : parse_url(str_contains($entry, '://') ? $entry : 'https://'.$entry);
+            if (! is_array($parts) || ($parts['host'] ?? '') === '') {
+                continue;
+            }
+
+            $port = isset($parts['port']) ? ':'.$parts['port'] : '';
+            $urls[] = strtolower($parts['scheme'] ?? 'https').'://'.strtolower($parts['host']).$port.self::API_PATH;
+        }
+
+        return array_values(array_unique($urls));
+    }
+
+    /** @return list<string> the API URL of each configured host, in the order given */
+    public function urls(): array
+    {
+        return $this->baseUrls;
+    }
+
+    /** The same client, talking to one host only (e.g. to test each Mail Checker worker). */
+    public function forHost(string $host): static
+    {
+        $client = clone $this;
+        $client->baseUrls = self::apiUrls($host);
+
+        return $client;
+    }
+
+    /**
+     * Check one address. Sync (default): the result comes back now (usually in a few seconds, at most
+     * the client's timeout); when it is
      * "unknown" with final = false, a check.completed webhook follows. Async: returns at once
      * with state "queued"; the result arrives by webhook.
      *
@@ -267,50 +329,134 @@ class MailcheckClient
     }
 
     /**
+     * One API call, with failover. A connection error or a 5xx is the worker's problem: with several hosts
+     * the call goes to the next one at once, and each is asked once (ck1, then ck2, then the call fails);
+     * with one host it is retried `retries` times. A host that couldn't be reached, or answered 502/503/504,
+     * is tried last for DOWN_SECONDS. A 429 waits and asks the same URL again, up to `retries` times (the
+     * limit is per application on every worker); other 4xx are final. Every attempt sends the same body,
+     * so a check retried on another worker carries the same reference and isn't made twice.
+     *
      * @param  array<string, mixed>  $data
      * @param  int|null  $timeout  seconds, instead of the default (sized for a sync check)
      */
     protected function request(string $method, string $path, array $data = [], ?int $timeout = null): Response
     {
-        try {
-            $response = $this->http($timeout)->{$method}($path, $data);
-        } catch (ConnectionException $e) {
-            throw MailcheckApiException::connection($e);
-        } catch (RequestException $e) {
-            $response = $e->response;
-        }
-
-        if (! $response->successful()) {
-            throw MailcheckApiException::fromResponse($response);
-        }
-
-        return $response;
-    }
-
-    protected function http(?int $timeout = null): PendingRequest
-    {
-        $timeout ??= $this->timeout;
-
-        if (blank($this->baseUrl)) {
-            throw new MailcheckApiException('MAILCHECKER_API_URL is not configured.', 400);
+        if ($this->baseUrls === []) {
+            throw new MailcheckApiException('MAILCHECKER_HOSTS has no valid host.', 400);
         }
         if (blank($this->token)) {
             throw new MailcheckApiException('MAILCHECKER_API_TOKEN is not configured.', 401);
         }
 
-        return Http::baseUrl(rtrim((string) $this->baseUrl, '/').'/')
+        $order = $this->attemptOrder();
+        $index = 0;
+        $retriesLeft = $this->retries;
+        $backoff = 0;
+        $last = null;
+
+        while (true) {
+            $baseUrl = $order[$index];
+            $last = $this->attempt($baseUrl, $method, $path, $data, $timeout);
+            if ($last instanceof Response && $last->successful()) {
+                return $last;
+            }
+
+            // The worker's problem (no connection, or a 5xx), rather than this request's or the rate limit's.
+            $workerFailed = ! $last instanceof Response || $last->serverError();
+            if (! $last instanceof Response || in_array($last->status(), [502, 503, 504], true)) {
+                $this->markDown($baseUrl);
+            }
+
+            if ($workerFailed && $index + 1 < count($order)) {
+                $index++;   // the next worker, at once
+
+                continue;
+            }
+
+            $rateLimited = $last instanceof Response && $last->status() === 429;
+            if (($rateLimited || ($workerFailed && count($order) === 1)) && $retriesLeft-- > 0) {
+                usleep((int) (250_000 * 2 ** $backoff++));   // 250 ms, 500 ms, … then the same URL again
+
+                continue;
+            }
+
+            break;
+        }
+
+        /** @var Response|ConnectionException $last (at least one attempt was made) */
+        throw $last instanceof Response ? MailcheckApiException::fromResponse($last) : MailcheckApiException::connection($last);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    protected function attempt(string $baseUrl, string $method, string $path, array $data, ?int $timeout): Response|ConnectionException
+    {
+        try {
+            return $this->http($baseUrl, $timeout)->{$method}($path, $data);
+        } catch (ConnectionException $e) {
+            return $e;
+        }
+    }
+
+    /**
+     * The URLs in the order this call tries them: from a random one when spreading, those that failed
+     * recently last.
+     *
+     * @return non-empty-list<string>
+     */
+    protected function attemptOrder(): array
+    {
+        $urls = $this->baseUrls;
+        if ($this->spread && count($urls) > 1) {
+            $start = random_int(0, count($urls) - 1);
+            $urls = [...array_slice($urls, $start), ...array_slice($urls, 0, $start)];
+        }
+
+        $up = array_values(array_filter($urls, fn (string $url) => ! $this->isDown($url)));
+        $down = array_values(array_filter($urls, fn (string $url) => $this->isDown($url)));
+
+        /** @var non-empty-list<string> */
+        return [...$up, ...$down];
+    }
+
+    protected function isDown(string $url): bool
+    {
+        try {
+            return Cache::has($this->downKey($url));
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    protected function markDown(string $url): void
+    {
+        if (count($this->baseUrls) < 2) {
+            return;
+        }
+
+        try {
+            Cache::put($this->downKey($url), true, now()->addSeconds(self::DOWN_SECONDS));
+        } catch (Throwable) {
+            // Without a working cache every call simply starts from the top again.
+        }
+    }
+
+    protected function downKey(string $url): string
+    {
+        return 'mailchecker-tools:down:'.sha1($url);
+    }
+
+    protected function http(string $baseUrl, ?int $timeout = null): PendingRequest
+    {
+        $timeout ??= $this->timeout;
+
+        return Http::baseUrl($baseUrl.'/')
             ->withToken((string) $this->token)
             ->acceptJson()
             ->asJson()
             ->withUserAgent('mailchecker-tools (Laravel)')
             ->timeout($timeout)
-            ->connectTimeout(min(5, $timeout))
-            ->retry(
-                $this->retries + 1,
-                fn (int $attempt) => 250 * 2 ** ($attempt - 1),
-                fn (Throwable $e) => $e instanceof ConnectionException
-                    || ($e instanceof RequestException && ($e->response->serverError() || $e->response->status() === 429)),
-                throw: false,
-            );
+            ->connectTimeout(max(1, min($this->connectTimeout, $timeout)));
     }
 }

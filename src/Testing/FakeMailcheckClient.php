@@ -49,7 +49,7 @@ class FakeMailcheckClient extends MailcheckClient
      */
     public function __construct(public array $results = [])
     {
-        parent::__construct('https://mailchecker.fake/api/v2', 'fake-token');
+        parent::__construct('mailchecker.fake', 'fake-token');
     }
 
     public function check(string $email, bool $async = false, ?string $reference = null, bool $force = false, ?int $maxAgeHours = null): array

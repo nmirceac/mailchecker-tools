@@ -13,13 +13,17 @@ class SetupCommand extends Command
         {--write-env : Write MAILCHECKER_WEBHOOK_SECRET into .env}
         {--skip-test : Do not send a test event}';
 
-    protected $description = 'Check the API token, register the webhook URL and test it';
+    protected $description = 'Check the API token (on every Mail Checker host), register the webhook URL and test it';
 
     public function handle(MailcheckClient $client): int
     {
         try {
+            $failedHosts = $this->checkEachHost($client);
+
             $current = $client->webhook();
-            $this->components->info('API token OK ('.config('mailchecker.api.url').')');
+            if (count($client->urls()) === 1) {
+                $this->components->info('API token OK ('.$client->urls()[0].')');
+            }
 
             $url = (string) ($this->option('url') ?: route((string) config('mailchecker.webhook.route.name')));
             if ($current['url'] !== $url) {
@@ -61,7 +65,40 @@ class SetupCommand extends Command
             return self::FAILURE;
         }
 
+        if ($failedHosts > 0) {
+            $this->components->warn("{$failedHosts} of ".count($client->urls()).' Mail Checker hosts failed; until they answer, calls go to the others.');
+
+            return self::FAILURE;
+        }
+
         return self::SUCCESS;
+    }
+
+    /**
+     * With several Mail Checker hosts (workers), asks each one on its own, so a worker that can't be
+     * reached shows up here rather than only when the others fail too.
+     *
+     * @return int how many failed
+     */
+    private function checkEachHost(MailcheckClient $client): int
+    {
+        $urls = $client->urls();
+        if (count($urls) < 2) {
+            return 0;
+        }
+
+        $failed = 0;
+        foreach ($urls as $url) {
+            try {
+                $client->forHost($url)->webhook();
+                $this->components->info("API token OK ({$url})");
+            } catch (MailcheckApiException $e) {
+                $failed++;
+                $this->components->error("{$url}: {$e->getMessage()}");
+            }
+        }
+
+        return $failed;
     }
 
     private function writeEnv(string $key, string $value): bool
